@@ -14,6 +14,7 @@ const qrRoutes = require('./routes/qr');
 const contactRoutes = require('./routes/contact');
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 

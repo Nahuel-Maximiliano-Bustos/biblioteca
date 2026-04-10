@@ -71,7 +71,7 @@ router.post('/', authenticateToken, async (req, res) => {
     VALUES (?, ?, 'reserved', ?, ?)
   `).run(req.user.id, book_id, pickupDeadline, qrToken);
 
-  await db.prepare('UPDATE books SET available_copies = available_copies - 1, updated_at = datetime("now") WHERE id = ?').run(book_id);
+  await db.prepare('UPDATE books SET available_copies = available_copies - 1, updated_at = datetime(\'now\') WHERE id = ?').run(book_id);
 
   // Notification to user
   await db.prepare(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`).run(
@@ -128,7 +128,7 @@ router.put('/:id/return', authenticateToken, requireAdmin, async (req, res) => {
   await db.prepare(`
     UPDATE loans SET status='returned', returned_at=datetime('now'), admin_notes=?, updated_at=datetime('now') WHERE id=?
   `).run(req.body.notes || null, req.params.id);
-  await db.prepare('UPDATE books SET available_copies = available_copies + 1, updated_at = datetime("now") WHERE id = ?').run(loan.book_id);
+  await db.prepare('UPDATE books SET available_copies = available_copies + 1, updated_at = datetime(\'now\') WHERE id = ?').run(loan.book_id);
 
   const book = await db.prepare('SELECT title FROM books WHERE id = ?').get(loan.book_id);
   await db.prepare(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`).run(
@@ -185,7 +185,7 @@ router.put('/:id/cancel', authenticateToken, async (req, res) => {
   if (loan.status !== 'reserved') return res.status(400).json({ error: 'Solo reservas pueden cancelarse' });
 
   await db.prepare(`UPDATE loans SET status='cancelled', updated_at=datetime('now') WHERE id=?`).run(req.params.id);
-  await db.prepare('UPDATE books SET available_copies = available_copies + 1, updated_at = datetime("now") WHERE id = ?').run(loan.book_id);
+  await db.prepare('UPDATE books SET available_copies = available_copies + 1, updated_at = datetime(\'now\') WHERE id = ?').run(loan.book_id);
   res.json({ message: 'Reserva cancelada', loan: await db.prepare('SELECT * FROM loans WHERE id = ?').get(req.params.id) });
 });
 
@@ -243,7 +243,7 @@ router.post('/scan', authenticateToken, requireAdmin, async (req, res) => {
   else if (loan.status === 'active' || loan.status === 'overdue') {
     // Return the book
     await db.prepare(`UPDATE loans SET status='returned', returned_at=datetime('now'), updated_at=datetime('now') WHERE id=?`).run(loan.id);
-    await db.prepare('UPDATE books SET available_copies = available_copies + 1, updated_at = datetime("now") WHERE id = ?').run(loan.book_id);
+    await db.prepare('UPDATE books SET available_copies = available_copies + 1, updated_at = datetime(\'now\') WHERE id = ?').run(loan.book_id);
     
     const book = await db.prepare('SELECT title FROM books WHERE id = ?').get(loan.book_id);
     await db.prepare(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`).run(

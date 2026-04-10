@@ -111,7 +111,7 @@ router.post('/reset-password', authLimiter, async (req, res) => {
     const payload = jwt.verify(token, JWT_SECRET);
     if (payload.purpose !== 'reset') return res.status(400).json({ error: 'Token inválido' });
     const hash = await bcrypt.hash(password, 12);
-    await db.prepare('UPDATE users SET password_hash = ?, updated_at = datetime("now") WHERE id = ?').run(hash, payload.id);
+    await db.prepare('UPDATE users SET password_hash = ?, updated_at = datetime(\'now\') WHERE id = ?').run(hash, payload.id);
     res.json({ message: 'Contraseña actualizada correctamente' });
   } catch {
     res.status(400).json({ error: 'Token inválido o expirado' });
