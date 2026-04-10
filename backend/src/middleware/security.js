@@ -44,6 +44,7 @@ function sanitizeInput(req, res, next) {
 
 const helmetMiddleware = helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
+  contentSecurityPolicy: false,
 });
 
 module.exports = { globalLimiter, authLimiter, sanitizeInput, helmetMiddleware };
