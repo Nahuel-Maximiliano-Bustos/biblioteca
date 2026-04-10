@@ -1,0 +1,13 @@
+node_modules/
+.env
+.DS_Store
+
+# Directorios de build
+dist/
+build/
+
+# Base de datos local
+*.db
+*.sqlite
+*.sqlite3
+backend/src/db/biblioteca.db
