@@ -9,6 +9,7 @@
     "seed": "node src/db/seed.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.2",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^9.6.0",
     "cors": "^2.8.6",

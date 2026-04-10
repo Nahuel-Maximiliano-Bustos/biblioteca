@@ -10,15 +10,9 @@ async function seed() {
   const userHash = await bcrypt.hash('User1234!', 12);
   const user2Hash = await bcrypt.hash('Maria1234!', 12);
 
-  const insertUser = db.prepare(`INSERT OR IGNORE INTO users (full_name, username, email, password_hash, role) VALUES (?, ?, ?, ?, ?)`);
-  insertUser.run('Administrador', 'admin', 'admin@biblioteca.com', adminHash, 'admin');
-  insertUser.run('Juan Pérez', 'juanp', 'juan@email.com', userHash, 'user');
-  insertUser.run('María García', 'mariag', 'maria@email.com', user2Hash, 'user');
-
-  const insertBook = db.prepare(`
-    INSERT OR IGNORE INTO books (title, author, isbn, category, description, total_copies, available_copies, location, tags)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+  await db.prepare(`INSERT OR IGNORE INTO users (full_name, username, email, password_hash, role) VALUES (?, ?, ?, ?, ?)`).run('Administrador', 'admin', 'admin@biblioteca.com', adminHash, 'admin');
+  await db.prepare(`INSERT OR IGNORE INTO users (full_name, username, email, password_hash, role) VALUES (?, ?, ?, ?, ?)`).run('Juan Pérez', 'juanp', 'juan@email.com', userHash, 'user');
+  await db.prepare(`INSERT OR IGNORE INTO users (full_name, username, email, password_hash, role) VALUES (?, ?, ?, ?, ?)`).run('María García', 'mariag', 'maria@email.com', user2Hash, 'user');
 
   const books = [
     ['Cien Años de Soledad', 'Gabriel García Márquez', '978-0-06-088328-7', 'Literatura Latinoamericana', 'La historia de la familia Buendía a lo largo de siete generaciones en el pueblo mítico de Macondo.', 3, 3, 'Estante A-1', 'realismo magico,colombia,clasico'],
@@ -33,34 +27,27 @@ async function seed() {
     ['Sapiens: De animales a dioses', 'Yuval Noah Harari', '978-0-06-231609-7', 'Historia', 'Una breve historia de la humanidad que estudia cómo Homo sapiens llegó a dominar el mundo.', 2, 2, 'Estante F-1', 'historia,ciencia,humanidad'],
     ['El Código Da Vinci', 'Dan Brown', '978-0-385-51375-5', 'Thriller', 'Un thriller simbólico y de conspiración por los mayores museos europeos.', 2, 2, 'Estante G-1', 'thriller,misterio,arte'],
     ['To Kill a Mockingbird', 'Harper Lee', '978-0-06-112008-4', 'Literatura Clásica', 'Atticus Finch y su lucha contra la injusticia racial en el sur de Estados Unidos.', 1, 1, 'Estante H-1', 'clasico,derecho,racial'],
-    ['Orgullo y Prejuicio', 'Jane Austen', '978-0-14-143951-8', 'Romance Clásico', 'El amor entre Elizabeth Bennet y el orgulloso Sr. Darcy en la Inglaterra del siglo XIX.', 2, 2, 'Estante A-3', 'romance,clasico,ingles'],
-    ['El Gran Gatsby', 'F. Scott Fitzgerald', '978-0-7432-7356-5', 'Literatura Clásica', 'El misterioso millonario Jay Gatsby y su obsesión con Daisy Buchanan.', 1, 1, 'Estante A-4', 'clasico,americano,romantico'],
-    ['Fahrenheit 451', 'Ray Bradbury', '978-1-4516-7331-9', 'Distopía', 'Una sociedad futurista donde los libros están prohibidos y los bomberos los queman.', 2, 2, 'Estante C-3', 'distopia,censura,futuro'],
-    ['La Casa de los Espíritus', 'Isabel Allende', '978-0-553-38380-3', 'Literatura Latinoamericana', 'La saga de la familia Trueba a lo largo de cuatro generaciones.', 1, 1, 'Estante A-5', 'realismo magico,chile,familia'],
-    ['Crimen y Castigo', 'Fiódor Dostoyevski', '978-0-14-044913-6', 'Literatura Clásica', 'Raskolnikov y su lucha interior tras cometer un asesinato.', 1, 1, 'Estante B-2', 'clasico,ruso,psicologia'],
-    ['El Hobbit', 'J.R.R. Tolkien', '978-0-618-00221-3', 'Fantasía', 'Las aventuras de Bilbo Bolsón para recuperar un tesoro.', 2, 2, 'Estante D-3', 'fantasia,aventura,juvenil'],
-    ['Atomic Habits', 'James Clear', '978-0-7352-1129-2', 'Desarrollo Personal', 'Cómo construir buenos hábitos y romper los malos.', 2, 2, 'Estante K-1', 'habitos,productividad,autoayuda'],
-    ['El Arte de la Guerra', 'Sun Tzu', '978-1-59030-225-0', 'Estrategia', 'El antiguo tratado militar chino sobre estrategia.', 2, 2, 'Estante J-1', 'estrategia,historia,filosofia'],
-    ['Sapiens', 'Yuval Noah Harari', '978-0-06-231609-8', 'Historia', 'Historia de la humanidad.', 1, 1, 'Estante F-2', 'historia,ciencia'],
-    ['Anna Karenina', 'León Tolstói', '978-0-374-52974-2', 'Literatura Clásica', 'La tragedia de Anna Karenina en la alta sociedad rusa.', 1, 1, 'Estante B-3', 'clasico,ruso,romance'],
   ];
 
   for (const book of books) {
-    insertBook.run(...book);
+    await db.prepare(`
+      INSERT OR IGNORE INTO books (title, author, isbn, category, description, total_copies, available_copies, location, tags)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(...book);
   }
 
   // Sample reservation for Juan
-  const juan = db.prepare('SELECT id FROM users WHERE username = ?').get('juanp');
-  const book1 = db.prepare('SELECT id FROM books WHERE isbn = ?').get('978-0-06-088328-7');
+  const juan = await db.prepare('SELECT id FROM users WHERE username = ?').get('juanp');
+  const book1 = await db.prepare('SELECT id FROM books WHERE isbn = ?').get('978-0-06-088328-7');
   if (juan && book1) {
-    const existing = db.prepare('SELECT id FROM loans WHERE user_id = ? AND book_id = ?').get(juan.id, book1.id);
+    const existing = await db.prepare('SELECT id FROM loans WHERE user_id = ? AND book_id = ?').get(juan.id, book1.id);
     if (!existing) {
       const { v4: uuidv4 } = require('uuid');
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO loans (user_id, book_id, status, pickup_deadline, qr_token)
         VALUES (?, ?, 'reserved', datetime('now', '+3 days'), ?)
       `).run(juan.id, book1.id, uuidv4());
-      db.prepare(`UPDATE books SET available_copies = available_copies - 1 WHERE id = ?`).run(book1.id);
+      await db.prepare(`UPDATE books SET available_copies = available_copies - 1 WHERE id = ?`).run(book1.id);
     }
   }
 

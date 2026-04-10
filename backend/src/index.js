@@ -39,7 +39,20 @@ app.use('/api/notifications', notificationsRoutes);
 app.use('/api/qr', qrRoutes);
 app.use('/api/contact', contactRoutes);
 
-app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
+const path = require('path');
+
+// Integración de Frontend para Producción (Render)
+if (process.env.NODE_ENV === 'production') {
+  const frontendPath = path.join(__dirname, '../../frontend2/dist');
+  app.use(express.static(frontendPath));
+
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(frontendPath, 'index.html'));
+  });
+} else {
+  app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
+}
+
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).json({ error: 'Error interno del servidor' });

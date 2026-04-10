@@ -37,22 +37,22 @@ router.post('/register', authLimiter, async (req, res) => {
   const pwError = validatePassword(password);
   if (pwError) return res.status(400).json({ error: pwError });
 
-  const existingEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+  const existingEmail = await db.prepare('SELECT id FROM users WHERE email = ?').get(email);
   if (existingEmail) return res.status(409).json({ error: 'El email ya está registrado' });
 
-  const existingUsername = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  const existingUsername = await db.prepare('SELECT id FROM users WHERE username = ?').get(username);
   if (existingUsername) return res.status(409).json({ error: 'El nombre de usuario ya está en uso' });
 
   try {
     const password_hash = await bcrypt.hash(password, 12);
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO users (full_name, username, email, password_hash, role)
       VALUES (?, ?, ?, ?, 'user')
     `).run(full_name.trim(), username.trim(), email.toLowerCase().trim(), password_hash);
 
-    db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'register', 'Nuevo usuario registrado')`).run(result.lastInsertRowid);
+    await db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'register', 'Nuevo usuario registrado')`).run(result.lastInsertRowid);
 
-    const user = db.prepare('SELECT id, full_name, username, email, role FROM users WHERE id = ?').get(result.lastInsertRowid);
+    const user = await db.prepare('SELECT id, full_name, username, email, role FROM users WHERE id = ?').get(result.lastInsertRowid);
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
     res.status(201).json({ token, user });
@@ -67,14 +67,14 @@ router.post('/login', authLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email y contraseña requeridos' });
 
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
+  const user = await db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase().trim());
   if (!user) return res.status(401).json({ error: 'Credenciales incorrectas' });
   if (!user.is_active) return res.status(403).json({ error: 'Cuenta desactivada' });
 
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) return res.status(401).json({ error: 'Credenciales incorrectas' });
 
-  db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'login', 'Inicio de sesión')`).run(user.id);
+  await db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'login', 'Inicio de sesión')`).run(user.id);
 
   const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
   const { password_hash, ...safeUser } = user;
@@ -91,7 +91,7 @@ router.post('/forgot-password', authLimiter, async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email requerido' });
 
-  const user = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
+  const user = await db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
   // Always return success to prevent email enumeration
   if (!user) return res.json({ message: 'Si el email existe, recibirás instrucciones de recuperación' });
 
@@ -111,7 +111,7 @@ router.post('/reset-password', authLimiter, async (req, res) => {
     const payload = jwt.verify(token, JWT_SECRET);
     if (payload.purpose !== 'reset') return res.status(400).json({ error: 'Token inválido' });
     const hash = await bcrypt.hash(password, 12);
-    db.prepare('UPDATE users SET password_hash = ?, updated_at = datetime("now") WHERE id = ?').run(hash, payload.id);
+    await db.prepare('UPDATE users SET password_hash = ?, updated_at = datetime("now") WHERE id = ?').run(hash, payload.id);
     res.json({ message: 'Contraseña actualizada correctamente' });
   } catch {
     res.status(400).json({ error: 'Token inválido o expirado' });

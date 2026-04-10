@@ -9,7 +9,7 @@ const LOAN_DAYS = 14; // 2 weeks default loan period
 const PICKUP_DEADLINE_DAYS = 3; // 3 days to pick up after reservation
 
 // GET /api/books — list with search, filter, pagination
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { q, category, status, page = 1, limit = 12 } = req.query;
   const offset = (parseInt(page) - 1) * parseInt(limit);
 
@@ -33,38 +33,38 @@ router.get('/', (req, res) => {
     where += ' AND available_copies = 0';
   }
 
-  const total = db.prepare(`SELECT COUNT(*) as count FROM books WHERE ${where}`).get(...params).count;
-  const books = db.prepare(`SELECT * FROM books WHERE ${where} ORDER BY title LIMIT ? OFFSET ?`).all(...params, parseInt(limit), offset);
+  const total = (await db.prepare(`SELECT COUNT(*) as count FROM books WHERE ${where}`).get(...params)).count;
+  const books = await db.prepare(`SELECT * FROM books WHERE ${where} ORDER BY title LIMIT ? OFFSET ?`).all(...params, parseInt(limit), offset);
 
   res.json({ books, total, page: parseInt(page), totalPages: Math.ceil(total / parseInt(limit)) });
 });
 
 // GET /api/books/categories
-router.get('/categories', (req, res) => {
-  const categories = db.prepare('SELECT DISTINCT category FROM books ORDER BY category').all().map(r => r.category);
+router.get('/categories', async (req, res) => {
+  const categories = (await db.prepare('SELECT DISTINCT category FROM books ORDER BY category').all()).map(r => r.category);
   res.json({ categories });
 });
 
 // GET /api/books/:id
-router.get('/:id', (req, res) => {
-  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id);
+router.get('/:id', async (req, res) => {
+  const book = await db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id);
   if (!book) return res.status(404).json({ error: 'Libro no encontrado' });
   res.json({ book });
 });
 
 // POST /api/books — admin only
-router.post('/', authenticateToken, requireAdmin, (req, res) => {
+router.post('/', authenticateToken, requireAdmin, async (req, res) => {
   const { title, author, isbn, category, description, cover_url, total_copies = 1, location, tags } = req.body;
   if (!title || !author || !category) return res.status(400).json({ error: 'Título, autor y categoría son requeridos' });
 
   try {
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO books (title, author, isbn, category, description, cover_url, total_copies, available_copies, location, tags)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(title, author, isbn || null, category, description || null, cover_url || null, total_copies, total_copies, location || null, tags || null);
 
-    const book = db.prepare('SELECT * FROM books WHERE id = ?').get(result.lastInsertRowid);
-    db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'book_create', ?)`).run(req.user.id, `Libro creado: ${title}`);
+    const book = await db.prepare('SELECT * FROM books WHERE id = ?').get(result.lastInsertRowid);
+    await db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'book_create', ?)`).run(req.user.id, `Libro creado: ${title}`);
     res.status(201).json({ book });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'ISBN ya registrado' });
@@ -73,8 +73,8 @@ router.post('/', authenticateToken, requireAdmin, (req, res) => {
 });
 
 // PUT /api/books/:id — admin only
-router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
-  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id);
+router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
+  const book = await db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id);
   if (!book) return res.status(404).json({ error: 'Libro no encontrado' });
 
   const { title, author, isbn, category, description, cover_url, total_copies, location, tags } = req.body;
@@ -84,7 +84,7 @@ router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
   const newAvail = Math.max(0, book.available_copies + diff);
 
   try {
-    db.prepare(`
+    await db.prepare(`
       UPDATE books SET title=?, author=?, isbn=?, category=?, description=?, cover_url=?,
       total_copies=?, available_copies=?, location=?, tags=?, updated_at=datetime('now') WHERE id=?
     `).run(
@@ -94,8 +94,8 @@ router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
       newTotal, newAvail, location !== undefined ? location : book.location,
       tags !== undefined ? tags : book.tags, req.params.id
     );
-    db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'book_update', ?)`).run(req.user.id, `Libro actualizado: ${req.params.id}`);
-    res.json({ book: db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) });
+    await db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'book_update', ?)`).run(req.user.id, `Libro actualizado: ${req.params.id}`);
+    res.json({ book: await db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id) });
   } catch (err) {
     if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'ISBN ya registrado' });
     res.status(500).json({ error: 'Error al actualizar libro' });
@@ -103,15 +103,15 @@ router.put('/:id', authenticateToken, requireAdmin, (req, res) => {
 });
 
 // DELETE /api/books/:id — admin only
-router.delete('/:id', authenticateToken, requireAdmin, (req, res) => {
-  const book = db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id);
+router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
+  const book = await db.prepare('SELECT * FROM books WHERE id = ?').get(req.params.id);
   if (!book) return res.status(404).json({ error: 'Libro no encontrado' });
 
-  const activeLoans = db.prepare(`SELECT COUNT(*) as c FROM loans WHERE book_id = ? AND status IN ('reserved','active')`).get(req.params.id).c;
+  const activeLoans = (await db.prepare(`SELECT COUNT(*) as c FROM loans WHERE book_id = ? AND status IN ('reserved','active')`).get(req.params.id)).c;
   if (activeLoans > 0) return res.status(409).json({ error: 'No se puede eliminar un libro con préstamos activos' });
 
-  db.prepare('DELETE FROM books WHERE id = ?').run(req.params.id);
-  db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'book_delete', ?)`).run(req.user.id, `Libro eliminado: ${book.title}`);
+  await db.prepare('DELETE FROM books WHERE id = ?').run(req.params.id);
+  await db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'book_delete', ?)`).run(req.user.id, `Libro eliminado: ${book.title}`);
   res.json({ message: 'Libro eliminado' });
 });
 

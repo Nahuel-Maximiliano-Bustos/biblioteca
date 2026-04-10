@@ -8,7 +8,7 @@ const router = express.Router();
 
 // GET /api/qr/:loanId — generate QR for loan pickup
 router.get('/:loanId', authenticateToken, async (req, res) => {
-  const loan = db.prepare(`
+  const loan = await db.prepare(`
     SELECT l.*, b.title as book_title, u.full_name as user_name, u.email
     FROM loans l JOIN books b ON l.book_id = b.id JOIN users u ON l.user_id = u.id
     WHERE l.id = ?
