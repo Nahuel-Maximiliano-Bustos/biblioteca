@@ -103,7 +103,7 @@ router.post('/', authenticateToken, async (req, res) => {
       loan.id
     ]).catch(e => console.error('Notification failed:', e));
 
-    const admins = await db.prepare('SELECT id FROM users WHERE role = "admin"').all();
+    const admins = await db.prepare("SELECT id FROM users WHERE role = 'admin'").all();
     for (const admin of admins) {
       db.run(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`, [
         admin.id, 'new_reservation', 'Nueva reserva',

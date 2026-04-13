@@ -16,7 +16,7 @@ router.post('/', async (req, res) => {
   `).run(name, email, subject, message);
 
   // Send a high-priority notification to the admins
-  const admins = await db.prepare('SELECT id FROM users WHERE role = "admin"').all();
+  const admins = await db.prepare("SELECT id FROM users WHERE role = 'admin'").all();
   for (const admin of admins) {
     await db.prepare(`INSERT INTO notifications (user_id, type, title, message) VALUES (?, ?, ?, ?)`).run(
       admin.id, 'new_contact', '📢 Nuevo Mensaje Público',
