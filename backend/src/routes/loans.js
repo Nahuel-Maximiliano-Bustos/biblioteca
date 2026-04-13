@@ -80,11 +80,11 @@ router.post('/', authenticateToken, async (req, res) => {
     // Insertion Batch (Transaction)
     await db.batch([
       { 
-        sql: 'INSERT INTO loans (user_id, book_id, status, pickup_deadline, qr_token) VALUES (?, ?, "reserved", ?, ?)',
+        sql: "INSERT INTO loans (user_id, book_id, status, pickup_deadline, qr_token) VALUES (?, ?, 'reserved', ?, ?)",
         args: [req.user.id, book_id, pickupDeadline, qrToken]
       },
       { 
-        sql: 'UPDATE books SET available_copies = MAX(0, available_copies - 1), updated_at = datetime("now") WHERE id = ?',
+        sql: "UPDATE books SET available_copies = MAX(0, available_copies - 1), updated_at = datetime('now') WHERE id = ?",
         args: [book_id]
       }
     ], "write");
