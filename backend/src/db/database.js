@@ -143,36 +143,24 @@ const dbWrapper = {
   async batch(queries, mode = "deferred") {
     try {
       const results = await db.batch(queries, mode);
-      return results.map((res, i) => {
+      return results.map(res => {
         if (!res || !res.rows) return res;
-        
-        const columns = res.columns || [];
         return {
           ...res,
-          rows: res.rows.map(rawRow => {
-            const row = {};
-            // Using columns array is safer than Object.keys on result rows
-            if (columns.length > 0) {
-              columns.forEach((col, idx) => {
-                let val = rawRow[idx];
-                if (typeof val === 'bigint') val = Number(val);
-                row[col] = val;
-              });
-            } else {
-              // Fallback for cases where columns is not provided
-              for (const key of Object.keys(rawRow)) {
-                let val = rawRow[key];
-                if (typeof val === 'bigint') val = Number(val);
-                row[key] = val;
-              }
+          rows: res.rows.map(row => {
+            const mapped = {};
+            // LibSQL rows are objects with column properties
+            for (const key of Object.keys(row)) {
+              let val = row[key];
+              if (typeof val === 'bigint') val = Number(val);
+              mapped[key] = val;
             }
-            return row;
+            return mapped;
           })
         };
       });
     } catch (err) {
       console.error(`DB Batch Error:`, err.message);
-      if (err.rawCode) console.error(`Raw Code: ${err.rawCode}`);
       throw err;
     }
   },

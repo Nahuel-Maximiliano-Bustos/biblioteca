@@ -60,24 +60,23 @@ router.post('/', authenticateToken, async (req, res) => {
     const qrToken = uuidv4();
     const pickupDeadline = new Date(Date.now() + PICKUP_DEADLINE_DAYS * 86400000).toISOString();
 
-    // Use batch for critical reads and writes to ensure atomicity and speed
-    const results = await db.batch([
-      { sql: 'SELECT * FROM books WHERE id = ?', args: [book_id] },
-      { 
-        sql: `SELECT l.id, b.title, l.status FROM loans l JOIN books b ON l.book_id = b.id 
-              WHERE l.user_id = ? AND l.book_id = ? AND l.status IN ('reserved','active','overdue')`, 
-        args: [req.user.id, book_id] 
-      }
-    ]);
-
-    const book = results[0].rows[0];
-    const activeUserLoan = results[1].rows[0];
-
+    // 1. Safe sequential reads
+    const book = await db.prepare('SELECT * FROM books WHERE id = ?').get(book_id);
     if (!book) return res.status(404).json({ error: 'Libro no encontrado' });
     if (book.available_copies <= 0) return res.status(409).json({ error: 'No hay ejemplares disponibles en este momento' });
-    if (activeUserLoan) return res.status(409).json({ error: `Ya tienes un préstamo ${activeUserLoan.status === 'reserved' ? 'reservado' : 'activo'} de "${activeUserLoan.title}"` });
 
-    // Insertion Batch (Transaction)
+    const activeUserLoan = await db.prepare(`
+      SELECT l.id, b.title, l.status FROM loans l JOIN books b ON l.book_id = b.id 
+      WHERE l.user_id = ? AND l.book_id = ? AND l.status IN ('reserved','active','overdue')
+    `).get(req.user.id, book_id);
+
+    if (activeUserLoan) {
+      return res.status(409).json({ 
+        error: `Ya tienes un préstamo ${activeUserLoan.status === 'reserved' ? 'reservado' : 'activo'} de "${activeUserLoan.title}"` 
+      });
+    }
+
+    // 2. Atomic Write Batch
     await db.batch([
       { 
         sql: "INSERT INTO loans (user_id, book_id, status, pickup_deadline, qr_token) VALUES (?, ?, 'reserved', ?, ?)",
@@ -89,32 +88,37 @@ router.post('/', authenticateToken, async (req, res) => {
       }
     ], "write");
 
-    // Fetch loan by token (unique and reliable)
+    // 3. Confirm and Notify
     const loan = await db.prepare(`
-      SELECT l.*, b.title as book_title, b.author as book_author FROM loans l JOIN books b ON l.book_id = b.id WHERE l.qr_token = ?
+      SELECT l.*, b.title as book_title, b.author as book_author 
+      FROM loans l JOIN books b ON l.book_id = b.id WHERE l.qr_token = ?
     `).get(qrToken);
 
-    if (!loan) throw new Error('Error al confirmar la reserva en la base de datos');
+    if (!loan) throw new Error('Error al confirmar la reserva tras la inserción');
 
-    // Notifications (Async/Background) - Don't wait for these to respond to user if they are slow
-    // But for now, we keep them sequential for simplicity until we need more speed
-    await db.prepare(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`).run(
+    // Notifications (Background)
+    await db.run(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`, [
       req.user.id, 'reservation', '¡Reserva confirmada!',
       `Tu reserva de "${book.title}" fue registrada. Tenés ${PICKUP_DEADLINE_DAYS} días para retirarlo.`,
       loan.id
-    );
+    ]).catch(e => console.error('Notification failed:', e));
 
     const admins = await db.prepare('SELECT id FROM users WHERE role = "admin"').all();
     for (const admin of admins) {
-      db.run(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`, [admin.id, 'new_reservation', 'Nueva reserva', `${req.user.full_name} reservó "${book.title}".`, loan.id]).catch(e => console.error('Admin notification failed:', e));
+      db.run(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`, [
+        admin.id, 'new_reservation', 'Nueva reserva',
+        `${req.user.full_name} reservó "${book.title}".`, loan.id
+      ]).catch(e => console.error('Admin notification failed:', e));
     }
 
-    await db.run(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'reserve', ?)`, [req.user.id, `Reserva: libro ${book_id}`]).catch(e => console.error('Log failed:', e));
+    db.run(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'reserve', ?)`, [
+      req.user.id, `Reserva: libro ${book_id}`
+    ]).catch(e => console.error('Log failed:', e));
 
     res.status(201).json({ loan });
   } catch (err) {
-    console.error('❌ Error en reserva (Batch):', err);
-    res.status(500).json({ error: 'Error al procesar la reserva: ' + err.message });
+    console.error('❌ Error en reserva (Hybrid):', err);
+    res.status(500).json({ error: 'Error al procesar la reserva: ' + (err.message || 'Error desconocido') });
   }
 });
 
