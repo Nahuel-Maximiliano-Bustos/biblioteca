@@ -104,13 +104,22 @@ const dbWrapper = {
           const res = await db.execute({ sql, args: p });
           if (!res || !res.rows || res.rows.length === 0) return undefined;
           
-          // Create a new object to avoid mutation issues with read-only DB rows
+          const columns = res.columns || [];
           const rawRow = res.rows[0];
           const row = {};
-          for (const key of Object.keys(rawRow)) {
-            let val = rawRow[key];
-            if (typeof val === 'bigint') val = Number(val);
-            row[key] = val;
+          
+          if (columns.length > 0) {
+            columns.forEach((col, idx) => {
+              let val = rawRow[idx];
+              if (typeof val === 'bigint') val = Number(val);
+              row[col] = val;
+            });
+          } else {
+            for (const key of Object.keys(rawRow)) {
+              let val = rawRow[key];
+              if (typeof val === 'bigint') val = Number(val);
+              row[key] = val;
+            }
           }
           return row;
         } catch (err) {
@@ -124,12 +133,21 @@ const dbWrapper = {
           const res = await db.execute({ sql, args: p });
           if (!res || !res.rows) return [];
           
+          const columns = res.columns || [];
           return res.rows.map(rawRow => {
             const row = {};
-            for (const key of Object.keys(rawRow)) {
-              let val = rawRow[key];
-              if (typeof val === 'bigint') val = Number(val);
-              row[key] = val;
+            if (columns.length > 0) {
+              columns.forEach((col, idx) => {
+                let val = rawRow[idx];
+                if (typeof val === 'bigint') val = Number(val);
+                row[col] = val;
+              });
+            } else {
+              for (const key of Object.keys(rawRow)) {
+                let val = rawRow[key];
+                if (typeof val === 'bigint') val = Number(val);
+                row[key] = val;
+              }
             }
             return row;
           });
@@ -145,17 +163,25 @@ const dbWrapper = {
       const results = await db.batch(queries, mode);
       return results.map(res => {
         if (!res || !res.rows) return res;
+        const columns = res.columns || [];
         return {
           ...res,
-          rows: res.rows.map(row => {
-            const mapped = {};
-            // LibSQL rows are objects with column properties
-            for (const key of Object.keys(row)) {
-              let val = row[key];
-              if (typeof val === 'bigint') val = Number(val);
-              mapped[key] = val;
+          rows: res.rows.map(rawRow => {
+            const row = {};
+            if (columns.length > 0) {
+              columns.forEach((col, idx) => {
+                let val = rawRow[idx];
+                if (typeof val === 'bigint') val = Number(val);
+                row[col] = val;
+              });
+            } else {
+              for (const key of Object.keys(rawRow)) {
+                let val = rawRow[key];
+                if (typeof val === 'bigint') val = Number(val);
+                row[key] = val;
+              }
             }
-            return mapped;
+            return row;
           })
         };
       });
