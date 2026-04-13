@@ -43,17 +43,25 @@ export default function BookDetailPage() {
       navigate('/register');
       return;
     }
+    
     setReserving(true);
-    try {
-      const { data } = await api.post('/loans', { book_id: id });
-      setUserLoan(data.loan);
-      setBook(b => ({ ...b, available_copies: b.available_copies - 1 }));
-      toast.success('¡Reserva realizada! Tenés 3 días para retirarlo.');
-    } catch (err) {
-      toast.error(err.response?.data?.error || 'Error al reservar');
-    } finally {
-      setReserving(false);
-    }
+    
+    const reservationPromise = api.post('/loans', { book_id: id })
+      .then((res) => {
+        // Atomic state updates
+        setUserLoan(res.data.loan);
+        setBook(prev => ({ ...prev, available_copies: Math.max(0, prev.available_copies - 1) }));
+        return res.data;
+      })
+      .finally(() => {
+        setReserving(false);
+      });
+
+    toast.promise(reservationPromise, {
+      loading: 'Procesando reserva...',
+      success: '¡Libro reservado! Tenés 3 días para retirarlo.',
+      error: (err) => err.response?.data?.error || 'Error al procesar la reserva'
+    });
   };
 
   const cancelReservation = async () => {

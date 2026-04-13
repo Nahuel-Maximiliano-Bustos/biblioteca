@@ -140,6 +140,29 @@ const dbWrapper = {
       }
     };
   },
+  async batch(queries) {
+    try {
+      const results = await db.batch(queries, "write");
+      return results.map(res => {
+        if (!res.rows) return res;
+        return {
+          ...res,
+          rows: res.rows.map(rawRow => {
+            const row = {};
+            for (const key of Object.keys(rawRow)) {
+              let val = rawRow[key];
+              if (typeof val === 'bigint') val = Number(val);
+              row[key] = val;
+            }
+            return row;
+          })
+        };
+      });
+    } catch (err) {
+      console.error(`DB Batch Error:`, err.message);
+      throw err;
+    }
+  },
   async run(sql, params = []) {
     return await this.prepare(sql).run(...params);
   },
