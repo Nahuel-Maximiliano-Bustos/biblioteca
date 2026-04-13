@@ -77,7 +77,7 @@ router.post('/', authenticateToken, async (req, res) => {
     if (book.available_copies <= 0) return res.status(409).json({ error: 'No hay ejemplares disponibles en este momento' });
     if (activeUserLoan) return res.status(409).json({ error: `Ya tienes un préstamo ${activeUserLoan.status === 'reserved' ? 'reservado' : 'activo'} de "${activeUserLoan.title}"` });
 
-    // Insertion Batch
+    // Insertion Batch (Transaction)
     await db.batch([
       { 
         sql: 'INSERT INTO loans (user_id, book_id, status, pickup_deadline, qr_token) VALUES (?, ?, "reserved", ?, ?)',
@@ -87,7 +87,7 @@ router.post('/', authenticateToken, async (req, res) => {
         sql: 'UPDATE books SET available_copies = MAX(0, available_copies - 1), updated_at = datetime("now") WHERE id = ?',
         args: [book_id]
       }
-    ]);
+    ], "write");
 
     // Fetch loan by token (unique and reliable)
     const loan = await db.prepare(`
