@@ -45,20 +45,24 @@ router.post('/register', authLimiter, async (req, res) => {
 
   try {
     const password_hash = await bcrypt.hash(password, 12);
-    const result = await db.prepare(`
+    await db.prepare(`
       INSERT INTO users (full_name, username, email, password_hash, role)
       VALUES (?, ?, ?, ?, 'user')
     `).run(full_name.trim(), username.trim(), email.toLowerCase().trim(), password_hash);
 
-    await db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'register', 'Nuevo usuario registrado')`).run(result.lastInsertRowid);
+    // Fetch the user by email (more reliable than lastInsertRowid)
+    const user = await db.prepare('SELECT id, full_name, username, email, role FROM users WHERE email = ?').get(email.toLowerCase().trim());
+    
+    if (!user) throw new Error('Usuario no encontrado después de registro');
 
-    const user = await db.prepare('SELECT id, full_name, username, email, role FROM users WHERE id = ?').get(result.lastInsertRowid);
+    await db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'register', 'Nuevo usuario registrado')`).run(user.id);
+
     const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 
     res.status(201).json({ token, user });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al registrar usuario' });
+    console.error('❌ Error en registro:', err);
+    res.status(500).json({ error: 'Error al registrar usuario: ' + err.message });
   }
 });
 

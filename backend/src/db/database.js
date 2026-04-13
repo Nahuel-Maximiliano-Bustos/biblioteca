@@ -86,19 +86,50 @@ const dbWrapper = {
   prepare(sql) {
     return {
       async run(...params) {
-        const p = params.flat();
-        const res = await db.execute({ sql, args: p });
-        return { lastInsertRowid: res.lastInsertRowid ? Number(res.lastInsertRowid) : null };
+        try {
+          const p = params.flat();
+          const res = await db.execute({ sql, args: p });
+          // Turso returns lastInsertRowid as BigInt or undefined
+          let lastId = res.lastInsertRowid;
+          if (typeof lastId === 'bigint') lastId = Number(lastId);
+          return { lastInsertRowid: lastId || null, changes: res.rowsAffected || 0 };
+        } catch (err) {
+          console.error(`DB Run Error [${sql}]:`, err.message);
+          throw err;
+        }
       },
       async get(...params) {
-        const p = params.flat();
-        const res = await db.execute({ sql, args: p });
-        return res.rows.length ? res.rows[0] : undefined;
+        try {
+          const p = params.flat();
+          const res = await db.execute({ sql, args: p });
+          if (!res.rows || res.rows.length === 0) return undefined;
+          
+          // Convert any BigInt in the row to Number for JSON compatibility
+          const row = res.rows[0];
+          for (const key in row) {
+            if (typeof row[key] === 'bigint') row[key] = Number(row[key]);
+          }
+          return row;
+        } catch (err) {
+          console.error(`DB Get Error [${sql}]:`, err.message);
+          throw err;
+        }
       },
       async all(...params) {
-        const p = params.flat();
-        const res = await db.execute({ sql, args: p });
-        return res.rows;
+        try {
+          const p = params.flat();
+          const res = await db.execute({ sql, args: p });
+          
+          return res.rows.map(row => {
+            for (const key in row) {
+              if (typeof row[key] === 'bigint') row[key] = Number(row[key]);
+            }
+            return row;
+          });
+        } catch (err) {
+          console.error(`DB All Error [${sql}]:`, err.message);
+          throw err;
+        }
       }
     };
   },
@@ -106,7 +137,12 @@ const dbWrapper = {
     return await this.prepare(sql).run(...params);
   },
   async exec(sql) {
-    await db.execute(sql);
+    try {
+      await db.execute(sql);
+    } catch (err) {
+      console.error(`DB Exec Error [${sql}]:`, err.message);
+      throw err;
+    }
   }
 };
 

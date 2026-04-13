@@ -44,30 +44,37 @@ const path = require('path');
 
 // Integración de Frontend para Producción (Render)
 if (process.env.NODE_ENV === 'production') {
-  const frontendPath = path.join(__dirname, '../../frontend2/dist');
+  const frontendPath = path.resolve(__dirname, '../../frontend2/dist');
+  console.log(`📂 Sirviendo frontend desde: ${frontendPath}`);
   app.use(express.static(frontendPath));
 
-  app.get('*', (req, res) => {
+  app.get('*', (req, res, next) => {
+    // Si la ruta empieza con /api, no servir el index.html
+    if (req.path.startsWith('/api')) return next();
     res.sendFile(path.join(frontendPath, 'index.html'));
   });
 } else {
-  app.use((req, res) => res.status(404).json({ error: 'Ruta no encontrada' }));
+  app.use('/api', (req, res) => res.status(404).json({ error: 'Ruta de API no encontrada' }));
 }
 
 app.use((err, req, res, next) => {
-  console.error(err.stack);
+  console.error('❌ Error no manejado:', err.stack);
   res.status(500).json({ error: 'Error interno del servidor' });
 });
 
-// Initialize database then start server
-initDb().then(() => {
-  app.listen(PORT, () => {
-    console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
-    console.log(`📚 Biblioteca Virtual API v1.0`);
-  });
-}).catch(err => {
-  console.error('Error iniciando base de datos:', err);
-  process.exit(1);
+// Start server immediately for health checks
+const server = app.listen(PORT, () => {
+  console.log(`🚀 Servidor iniciado en puerto ${PORT}`);
+  console.log(`🌐 Entorno: ${process.env.NODE_ENV || 'development'}`);
+  
+  // Initialize database in background
+  initDb()
+    .then(() => console.log('✅ Base de datos inicializada correctamente'))
+    .catch(err => {
+      console.error('❌ Error crítico al iniciar base de datos:', err);
+      // No cerramos el proceso para que Render no lo reinicie infinitamente
+      // Pero las rutas de la DB fallarán con un error 500 controlado
+    });
 });
 
 module.exports = app;
