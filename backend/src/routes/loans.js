@@ -58,10 +58,10 @@ router.post('/', authenticateToken, async (req, res) => {
 
   const book = await db.prepare('SELECT * FROM books WHERE id = ?').get(book_id);
   if (!book) return res.status(404).json({ error: 'Libro no encontrado' });
-  if (book.available_copies <= 0) return res.status(409).json({ error: 'No hay ejemplares disponibles' });
+  if (book.available_copies <= 0) return res.status(409).json({ error: 'No hay ejemplares disponibles en este momento' });
 
-  const activeUserLoan = await db.prepare(`SELECT id FROM loans WHERE user_id = ? AND book_id = ? AND status IN ('reserved','active')`).get(req.user.id, book_id);
-  if (activeUserLoan) return res.status(409).json({ error: 'Ya tenés un préstamo activo de este libro' });
+  const activeUserLoan = await db.prepare(`SELECT l.id, b.title FROM loans l JOIN books b ON l.book_id = b.id WHERE l.user_id = ? AND l.book_id = ? AND l.status IN ('reserved','active','overdue')`).get(req.user.id, book_id);
+  if (activeUserLoan) return res.status(409).json({ error: `Ya tienes un préstamo ${activeUserLoan.status === 'reserved' ? 'reservado' : 'activo'} de "${activeUserLoan.title}"` });
 
   const qrToken = uuidv4();
   const pickupDeadline = new Date(Date.now() + PICKUP_DEADLINE_DAYS * 86400000).toISOString();
@@ -71,7 +71,7 @@ router.post('/', authenticateToken, async (req, res) => {
     VALUES (?, ?, 'reserved', ?, ?)
   `).run(req.user.id, book_id, pickupDeadline, qrToken);
 
-  await db.prepare('UPDATE books SET available_copies = available_copies - 1, updated_at = datetime(\'now\') WHERE id = ?').run(book_id);
+  await db.prepare('UPDATE books SET available_copies = MAX(0, available_copies - 1), updated_at = datetime(\'now\') WHERE id = ?').run(book_id);
 
   // Fetch loan by token (unique and reliable)
   const loan = await db.prepare(`
@@ -132,7 +132,9 @@ router.put('/:id/return', authenticateToken, requireAdmin, async (req, res) => {
   await db.prepare(`
     UPDATE loans SET status='returned', returned_at=datetime('now'), admin_notes=?, updated_at=datetime('now') WHERE id=?
   `).run(req.body.notes || null, req.params.id);
-  await db.prepare('UPDATE books SET available_copies = available_copies + 1, updated_at = datetime(\'now\') WHERE id = ?').run(loan.book_id);
+  
+  // Safety guard: increment available copies but not exceeding total_copies
+  await db.prepare('UPDATE books SET available_copies = MIN(total_copies, available_copies + 1), updated_at = datetime(\'now\') WHERE id = ?').run(loan.book_id);
 
   const book = await db.prepare('SELECT title FROM books WHERE id = ?').get(loan.book_id);
   await db.prepare(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`).run(
