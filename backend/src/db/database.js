@@ -102,12 +102,15 @@ const dbWrapper = {
         try {
           const p = params.flat();
           const res = await db.execute({ sql, args: p });
-          if (!res.rows || res.rows.length === 0) return undefined;
+          if (!res || !res.rows || res.rows.length === 0) return undefined;
           
-          // Convert any BigInt in the row to Number for JSON compatibility
-          const row = res.rows[0];
-          for (const key in row) {
-            if (typeof row[key] === 'bigint') row[key] = Number(row[key]);
+          // Create a new object to avoid mutation issues with read-only DB rows
+          const rawRow = res.rows[0];
+          const row = {};
+          for (const key of Object.keys(rawRow)) {
+            let val = rawRow[key];
+            if (typeof val === 'bigint') val = Number(val);
+            row[key] = val;
           }
           return row;
         } catch (err) {
@@ -119,10 +122,14 @@ const dbWrapper = {
         try {
           const p = params.flat();
           const res = await db.execute({ sql, args: p });
+          if (!res || !res.rows) return [];
           
-          return res.rows.map(row => {
-            for (const key in row) {
-              if (typeof row[key] === 'bigint') row[key] = Number(row[key]);
+          return res.rows.map(rawRow => {
+            const row = {};
+            for (const key of Object.keys(rawRow)) {
+              let val = rawRow[key];
+              if (typeof val === 'bigint') val = Number(val);
+              row[key] = val;
             }
             return row;
           });

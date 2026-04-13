@@ -77,4 +77,13 @@ const server = app.listen(PORT, () => {
     });
 });
 
+// Global unhandled error handlers for production stability
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('⚠️ Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Uncaught Exception:', err);
+});
+
 module.exports = app;

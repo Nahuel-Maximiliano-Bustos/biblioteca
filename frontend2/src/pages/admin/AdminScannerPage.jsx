@@ -9,17 +9,35 @@ export default function AdminScannerPage() {
   const [processing, setProcessing] = useState(false);
   const [scannedResult, setScannedResult] = useState(null);
 
-  const handleScan = async (devices) => {
+  const handleScan = async (result) => {
     if (processing) return;
-    const rawValue = devices[0]?.rawValue;
-    if (!rawValue) return;
+    
+    // Support both the array of results and a single result string
+    let tokenValue = '';
+    if (Array.isArray(result) && result.length > 0) {
+      tokenValue = result[0]?.rawValue || result[0]?.text;
+    } else if (typeof result === 'string') {
+      tokenValue = result;
+    } else if (result && typeof result === 'object') {
+      tokenValue = result.rawValue || result.text;
+    }
+
+    if (!tokenValue) return;
 
     setProcessing(true);
     try {
-      const data = JSON.parse(rawValue);
-      if (!data.token) throw new Error();
+      let token = tokenValue;
+      // If it's a JSON string, extract the token
+      if (tokenValue.startsWith('{')) {
+        try {
+          const parsed = JSON.parse(tokenValue);
+          token = parsed.token || tokenValue;
+        } catch (e) {
+          // Fallback to raw value if parse fails
+        }
+      }
 
-      const response = await api.post('/loans/scan', { token: data.token });
+      const response = await api.post('/loans/scan', { token });
       toast.success(response.data.message);
       
       const newLog = {

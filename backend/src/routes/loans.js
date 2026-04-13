@@ -66,18 +66,25 @@ router.post('/', authenticateToken, async (req, res) => {
   const qrToken = uuidv4();
   const pickupDeadline = new Date(Date.now() + PICKUP_DEADLINE_DAYS * 86400000).toISOString();
 
-  const result = await db.prepare(`
+  await db.prepare(`
     INSERT INTO loans (user_id, book_id, status, pickup_deadline, qr_token)
     VALUES (?, ?, 'reserved', ?, ?)
   `).run(req.user.id, book_id, pickupDeadline, qrToken);
 
   await db.prepare('UPDATE books SET available_copies = available_copies - 1, updated_at = datetime(\'now\') WHERE id = ?').run(book_id);
 
+  // Fetch loan by token (unique and reliable)
+  const loan = await db.prepare(`
+    SELECT l.*, b.title as book_title, b.author as book_author FROM loans l JOIN books b ON l.book_id = b.id WHERE l.qr_token = ?
+  `).get(qrToken);
+
+  if (!loan) throw new Error('Error al confirmar la reserva en la base de datos');
+
   // Notification to user
   await db.prepare(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`).run(
     req.user.id, 'reservation', '¡Reserva confirmada!',
     `Tu reserva de "${book.title}" fue registrada. Tenés ${PICKUP_DEADLINE_DAYS} días para retirarlo.`,
-    result.lastInsertRowid
+    loan.id
   );
 
   // Notification to admins
@@ -85,15 +92,12 @@ router.post('/', authenticateToken, async (req, res) => {
   for (const admin of admins) {
     await db.prepare(`INSERT INTO notifications (user_id, type, title, message, loan_id) VALUES (?, ?, ?, ?, ?)`).run(
       admin.id, 'new_reservation', 'Nueva reserva',
-      `${req.user.full_name} reservó "${book.title}".`, result.lastInsertRowid
+      `${req.user.full_name} reservó "${book.title}".`, loan.id
     );
   }
 
   await db.prepare(`INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'reserve', ?)`).run(req.user.id, `Reserva: libro ${book_id}`);
 
-  const loan = await db.prepare(`
-    SELECT l.*, b.title as book_title, b.author as book_author FROM loans l JOIN books b ON l.book_id = b.id WHERE l.id = ?
-  `).get(result.lastInsertRowid);
   res.status(201).json({ loan });
 });
 
@@ -220,6 +224,7 @@ router.get('/stats/summary', authenticateToken, requireAdmin, async (req, res) =
 // POST /api/loans/scan — admin scans QR token 
 router.post('/scan', authenticateToken, requireAdmin, async (req, res) => {
   const { token } = req.body;
+  console.log('🔍 Escaneando token received:', token);
   if (!token) return res.status(400).json({ error: 'Token QR requerido' });
 
   const loan = await db.prepare(`SELECT * FROM loans WHERE qr_token = ?`).get(token);
